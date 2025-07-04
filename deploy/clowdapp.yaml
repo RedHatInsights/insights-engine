@@ -1,0 +1,192 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: engine
+objects:
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdApp
+  metadata:
+    name: engine
+  spec:
+    envName: ${ENV_NAME}
+    testing:
+      iqePlugin: advisor
+    optionalDependencies:
+      - ingress
+      - puptoo
+      - host-inventory
+      - advisor-backend
+      - playbook-dispatcher
+      - sources-api
+    deployments:
+      - name: processor
+        minReplicas: ${{MIN_REPLICAS}}
+        podSpec:
+          args:
+            - /var/config.yaml
+          command:
+            - insights-core-engine
+          image: ${IMAGE}:${IMAGE_TAG}
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 187
+            successThreshold: 1
+            timeoutSeconds: 35
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 67
+            successThreshold: 1
+            timeoutSeconds: 35
+          env:
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
+            - name: EVENTS_TOPIC
+              value: ${EVENTS_TOPIC}
+          resources:
+            limits:
+              cpu: ${CPU_LIMIT}
+              memory: ${MEMORY_LIMIT}
+            requests:
+              cpu: 600m
+              memory: 768Mi
+          volumeMounts:
+          - mountPath: /var
+            name: insights-engine
+          volumes:
+          - configMap:
+              defaultMode: 420
+              name: insights-engine
+            name: insights-engine
+    inMemoryDb: true
+    kafkaTopics:
+      - replicas: 5
+        partitions: 5
+        topicName: ${EVENTS_TOPIC}
+      - replicas: 5
+        partitions: 5
+        topicName: platform.engine.results
+      - replicas: 5
+        partitions: 5
+        topicName: platform.payload-status
+- apiVersion: v1
+  data:
+    config.yaml: |+
+      plugins:
+          default_component_enabled: true
+          packages:
+              - insights.specs.default
+              - insights.specs.insights_archive
+              - telemetry.rules
+              - prodsec.rules
+              - insights_kafka_service.rules
+      configs: []
+      service:
+          extract_timeout: 10
+          unpacked_archive_size_limit: 1800000000
+          extract_tmp_dir:
+          format: insights_kafka_service.formats._insights.InsightsFormat
+          target_components: []
+          consumer:
+            name: "insights_kafka_service.consumer.InsightsKafkaConsumer"
+            kwargs:
+              services:
+                - "advisor"
+              group_id: "insights-core-kafka"
+              queued.max.messages.kbytes: 10000
+              session.timeout.ms: 30000
+              max.poll.interval.ms: 600000
+          publisher:
+            name: "insights_kafka_service.producer.InsightsKafkaProducer"
+          downloader:
+            name: "insights_messaging.downloaders.httpfs.Http"
+          redis:
+            decode_responses: true
+          logging_configurator:
+            name: insights_kafka_service.log_configurator.configure_logging
+          logging:
+            version: 1
+            disable_existing_loggers: false
+            formatters:
+              logstash:
+                (): logstash_formatter.LogstashFormatterV1
+            handlers:
+              console:
+                class: logging.StreamHandler
+                formatter: logstash
+                stream: ext://sys.stdout
+            root:
+                level: INFO
+                handlers: [console]
+            loggers:
+              insights.core.dr:
+                level: ${INSIGHTS_CORE_LOG_LEVEL}
+              insights.core.plugins:
+                level: ${INSIGHTS_CORE_LOG_LEVEL}
+              insights_messaging:
+                level: ${ENGINE_LOG_LEVEL}
+              insights_kafka_service:
+                level: ${ENGINE_LOG_LEVEL}
+              kafka:
+                level: ${KAFKA_LOG_LEVEL}
+              "":
+                handlers:
+                  - console
+                level: ${DEFAULT_LOG_LEVEL}
+          watchers:
+            - name: "insights_kafka_service.metrics.Watcher"
+            - name: "insights_kafka_service.metrics.Engine"
+            - name: "insights_kafka_service.tracker.Watcher"
+              kwargs:
+                service_name: "insights-engine"
+  kind: ConfigMap
+  metadata:
+    name: insights-engine
+  annotations:
+    qontract.recycle: "true"
+parameters:
+- description: Topic to consume events from.
+  name: EVENTS_TOPIC
+  value: platform.inventory.events
+- description: The log group to use for cloudwatch logging
+  name: CLOUD_WATCH_LOG_GROUP
+  value: platform-dev
+- description: Cpu limit of service
+  name: CPU_LIMIT
+  value: '2'
+- description: memory limit of service
+  name: MEMORY_LIMIT
+  value: 1Gi
+- name: DEFAULT_LOG_LEVEL
+  value: INFO
+- name: ENGINE_LOG_LEVEL
+  value: INFO
+- name: KAFKA_LOG_LEVEL
+  value: ERROR
+- name: INSIGHTS_CORE_LOG_LEVEL
+  value: ERROR
+- description: Image tag
+  name: IMAGE_TAG
+  required: true
+- description: Image name
+  name: IMAGE
+  value: quay.io/redhat-services-prod/insights-management-tenant/insights-engine/engine
+  # value: quay.io/cloudservices/insights-engine
+- description: Configured amount of replicas
+  name: MIN_REPLICAS
+  value: "1"
+- description: Determines Clowder deployment
+  name: CLOWDER_ENABLED
+  value: "false"
+- description: ClowdEnv Name
+  name: ENV_NAME
+  required: false

@@ -1,0 +1,52 @@
+plugins:
+    default_component_enabled: true
+    packages:
+        - insights.specs.default
+        - insights.specs.insights_archive
+        - examples.rules
+configs: []
+service:
+    extract_timeout: 10
+    unpacked_archive_size_limit: 1800000000
+    extract_tmp_dir:
+    format: insights_kafka_service.formats._insights.InsightsFormat
+    target_components: []
+    consumer:
+      name: "insights_kafka_service.consumer.InsightsKafkaConsumer"
+      kwargs:
+        services:
+          - advisor
+        incoming_topic: "platform.inventory.events"
+        group_id: "insights-core-kafka"
+        bootstrap_servers:
+          - "kafka:9092"
+    publisher:
+      name: "insights_kafka_service.producer.InsightsKafkaProducer"
+      kwargs:
+        topic: "platform.engine.results"
+        bootstrap_servers:
+          - "kafka:9092"
+    downloader:
+      name: "insights_messaging.downloaders.httpfs.Http"
+    logging_configurator:
+      name: insights_kafka_service.log_configurator.configure_logging
+    logging:
+      version: 1
+      disable_existing_loggers: false
+      loggers:
+        insights.core.dr:
+          level: "ERROR"
+        insights_messaging:
+          level: "INFO"
+        insights_kafka_service:
+          level: "INFO"
+        "":
+          level: "INFO"
+    watchers:
+      - name: "insights_kafka_service.metrics.Watcher"
+      - name: "insights_kafka_service.tracker.Watcher"
+        kwargs:
+          topic: "platform.payload-status"
+          bootstrap_servers:
+            - "kafka:9092"
+          service_name: "insights-engine"

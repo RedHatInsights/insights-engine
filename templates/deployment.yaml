@@ -1,0 +1,244 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: insights-engine
+objects:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: insights-engine
+    name: insights-engine
+  spec:
+    minReadySeconds: 15
+    progressDeadlineSeconds: 600
+    replicas: ${{REPLICAS}}
+    revisionHistoryLimit: 9
+    selector:
+      matchLabels:
+        app: insights-engine
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 10%
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: insights-engine
+      spec:
+        containers:
+        - args:
+          - /var/config.yaml
+          command:
+          - insights-core-engine
+          env:
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                key: aws_secret_access_key
+                name: cloudwatch
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                key: aws_access_key_id
+                name: cloudwatch
+          - name: AWS_DEFAULT_REGION
+            valueFrom:
+              secretKeyRef:
+                key: aws_region
+                name: cloudwatch
+          - name: REDIS_HOSTNAME
+            valueFrom:
+              secretKeyRef:
+                key: db.endpoint
+                name: in-memory-db
+          image: quay.io/cloudservices/insights-engine:${IMAGE_TAG}
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 27
+          name: insights-engine
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 30
+          resources:
+            limits:
+              cpu: ${CPU_LIMIT}
+              memory: ${MEMORY_LIMIT}
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var
+            name: insights-engine
+        dnsPolicy: ClusterFirst
+        imagePullSecrets:
+        - name: quay-cloudservices-pull
+        - name: rh-registry-pull
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: private-image-puller
+        serviceAccountName: private-image-puller
+        terminationGracePeriodSeconds: 60
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: failure-domain.beta.kubernetes.io/zone
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - insights-engine
+            - weight: 99
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - insights-engine
+        volumes:
+        - configMap:
+            defaultMode: 420
+            name: insights-engine
+          name: insights-engine
+- apiVersion: v1
+  data:
+    config.yaml: |+
+      plugins:
+          default_component_enabled: true
+          packages:
+              - insights.specs.default
+              - insights.specs.insights_archive
+              - telemetry.rules
+              - prodsec.rules
+              - insights_kafka_service.rules
+      configs: []
+      service:
+          extract_timeout: 10
+          extract_tmp_dir:
+          format: insights_kafka_service.formats._insights.InsightsFormat
+          target_components: []
+          consumer:
+            name: "insights_kafka_service.consumer.InsightsKafkaConsumer"
+            kwargs:
+              services:
+                - "advisor"
+              incoming_topic: "platform.inventory.events"
+              group_id: "insights-core-kafka"
+              bootstrap_servers:
+                - "${KAFKA_BOOTSTRAP_HOST}:${KAFKA_BOOTSTRAP_PORT}"
+              queued.max.messages.kbytes: 10000
+          publisher:
+            name: "insights_kafka_service.producer.InsightsKafkaProducer"
+            kwargs:
+              topic: "platform.engine.results"
+              bootstrap_servers:
+                - "${KAFKA_BOOTSTRAP_HOST}:${KAFKA_BOOTSTRAP_PORT}"
+          downloader:
+            name: "insights_messaging.downloaders.httpfs.Http"
+          logging:
+            version: 1
+            disable_existing_loggers: false
+            formatters:
+              logstash:
+                (): logstash_formatter.LogstashFormatterV1
+            handlers:
+              console:
+                class: logging.StreamHandler
+                formatter: logstash
+                stream: ext://sys.stdout
+            loggers:
+              insights.core.dr:
+                level: ${INSIGHTS_CORE_LOG_LEVEL}
+              insights.core.plugins:
+                level: ${INSIGHTS_CORE_LOG_LEVEL}
+              kafka:
+                level: ${KAFKA_LOG_LEVEL}
+              "":
+                handlers:
+                  - console
+                level: ${DEFAULT_LOG_LEVEL}
+          watchers:
+            - name: "insights_kafka_service.metrics.Watcher"
+            - name: "insights_kafka_service.metrics.Engine"
+            - name: "insights_kafka_service.tracker.Watcher"
+              kwargs:
+                topic: "platform.payload-status"
+                bootstrap_servers:
+                  - "${KAFKA_BOOTSTRAP_HOST}:${KAFKA_BOOTSTRAP_PORT}"
+                service_name: "insights-engine"
+  kind: ConfigMap
+  metadata:
+    name: insights-engine
+  annotations:
+    qontract.recycle: "true"
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      prometheus.io/path: /metrics
+      prometheus.io/port: '8080'
+      prometheus.io/scrape: 'true'
+    labels:
+      app: insights-engine
+    name: insights-engine
+  spec:
+    ports:
+    - name: 8080-tcp
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: insights-engine
+    sessionAffinity: None
+    type: ClusterIP
+parameters:
+- description: The log group to use for cloudwatch logging
+  name: CLOUD_WATCH_LOG_GROUP
+  value: platform-dev
+- name: KAFKA_BOOTSTRAP_HOST
+  value: mq-kafka
+- name: KAFKA_BOOTSTRAP_PORT
+  value: '29092'
+- description: Cpu limit of service
+  name: CPU_LIMIT
+  value: '1'
+- description: memory limit of service
+  name: MEMORY_LIMIT
+  value: 1Gi
+- name: DEFAULT_LOG_LEVEL
+  value: INFO
+- name: KAFKA_LOG_LEVEL
+  value: ERROR
+- name: INSIGHTS_CORE_LOG_LEVEL
+  value: ERROR
+- description: Image tag
+  name: IMAGE_TAG
+  required: true
+- description: Configured amount of replicas
+  name: REPLICAS
+  value: "1"

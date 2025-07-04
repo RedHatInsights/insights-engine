@@ -1,0 +1,1 @@
+insights-core @ git+https://github.com/RedHatInsights/insights-core.git@insights-core-3.6.1
