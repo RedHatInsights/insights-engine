@@ -38,7 +38,7 @@ Run the build:
 
 ## Podman Run
 
-To run the image, ensure you have a kafka service running and accessible via `kafka:29092`. You can
+To run the image, ensure you have a kafka service running and accessible via `kafka:9092`. You can
 also edit the config to point to the kafka bootstrap server of your choice.
 
     podman run -it --name engine --rm insights-core-engine:latest
