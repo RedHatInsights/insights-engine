@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 USER root
 ENV APP_ROOT=/opt/app-root
