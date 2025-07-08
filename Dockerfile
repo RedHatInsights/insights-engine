@@ -4,10 +4,6 @@ USER root
 ENV APP_ROOT=/opt/app-root
 WORKDIR $APP_ROOT
 
-# install redhat root ca certs
-ADD https://certs.corp.redhat.com/certs/2022-IT-Root-CA.pem /etc/pki/ca-trust/source/anchors/
-RUN update-ca-trust
-
 # Install required packages
 RUN microdnf update -y && microdnf -y install git file tar xz zip unzip bzip2 gzip python3.12 python3.12-pip && microdnf clean all && ln -sf /bin/python3.12 /bin/python3
 RUN python3 -m pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
