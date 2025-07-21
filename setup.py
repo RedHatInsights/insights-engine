@@ -2,17 +2,17 @@ from setuptools import find_packages, setup
 
 requirements = [
     "attrs==19.3.0",
-    "urllib3==1.26.19",
+    "urllib3==2.5.0",
     "boto3==1.35.16",
     "botocore==1.35.16",
-    "s3fs==0.6.0",
-    "confluent-kafka==2.9.0",
+    "s3fs==2025.5.1",
+    "confluent-kafka==2.11.0",
     "logstash-formatter==0.5.17",
     "prometheus-client==0.21.1",
-    "requests==2.32.3",
+    "requests==2.32.4",
     "watchtower==3.3.1",
     "app-common-python==0.2.7",
-    "insights-core-messaging @ git+https://github.com/RedHatInsights/insights-core-messaging@1.2.19"
+    "insights-core-messaging @ git+https://github.com/RedHatInsights/insights-core-messaging@1.2.20"
 ]
 
 
