@@ -750,7 +750,7 @@ data:
                 "uid": "$datasource"
               },
               "editorMode": "code",
-              "expr": "sum(kafka_consumergroup_group_lag{topic=\"platform.inventory.events\",group=\"insights-core-kafka\"}) by (group)",
+              "expr": "sum(aws_kafka_sum_offset_lag_sum{topic=\"platform.inventory.events\",group=\"insights-core-kafka\"}) by (group)",
               "hide": false,
               "legendFormat": "{{label_name}}",
               "range": true,
