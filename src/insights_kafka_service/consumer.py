@@ -9,13 +9,13 @@ from . import PayloadMeta
 
 logger = logging.getLogger(__name__)
 
-CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", False)
+CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", "False")
 
 
 def get_redis(cfg):
     import redis
 
-    if CLOWDER_ENABLED:
+    if CLOWDER_ENABLED.lower() == "true":
         from app_common_python import LoadedConfig
 
         hostname = LoadedConfig.inMemoryDb.hostname
@@ -34,7 +34,7 @@ def get_redis(cfg):
 
     # use ssl if the password is present - since the password is only present in the config if ssl is enabled in app-interface
     ssl = password is not None and password != ""
-
+    logger.info("The hostname of redis is " + hostname)
     return redis.Redis(
         host=hostname,
         port=LoadedConfig.inMemoryDb.port,
@@ -47,7 +47,7 @@ def get_redis(cfg):
 class InsightsKafkaConsumer(Kafka):
     def __init__(self, *args, **kwargs):
         logger.debug('InsightsKafkaConsumer starting up, args=%s, kwargs=%s', args, kwargs)
-        if CLOWDER_ENABLED:
+        if CLOWDER_ENABLED.lower() == "true":
             from app_common_python import LoadedConfig, KafkaTopics, KafkaServers
 
             KAFKA_BROKER = LoadedConfig.kafka.brokers[0]
@@ -80,10 +80,16 @@ class InsightsKafkaConsumer(Kafka):
         # group.instance.id: OffsetCommit failed: Broker: Static consumer fenced by other consumer with same group.instance.id
         kwargs["group.instance.id"] = os.environ.get("HOSTNAME")
         self.services = kwargs.pop("services")
+        logger.info("engine consumer kwargs: " + str(kwargs))
         super().__init__(*args, **kwargs)
         self.types = ("created", "updated")
         self.redis = get_redis(kwargs["redis"]) if "redis" in kwargs else None
         logger.info('InsightsKafkaConsumer services=%s, redis=%s', self.services, self.redis)
+        # show logging configuration
+        logger.info("The value of CLOWDER_ENABLED is " + CLOWDER_ENABLED)
+        all_loggers = [logging.getLogger()]  # root logger
+        all_loggers += [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+        logger.info({one_logger.name: one_logger.handlers for one_logger in all_loggers})
 
     def deserialize(self, bytes_):
         return json.loads(bytes_.decode("utf-8"))
@@ -135,6 +141,9 @@ class InsightsKafkaConsumer(Kafka):
             'Processing request id %s timestamp %s',
             request_id, Payload.platform_metadata.timestamp
         )
+        # if Payload.host["id"] in ["61cd34a3-8c79-4057-9b70-c42d2ddc8fc8", "757f4445-d7ef-43d2-8712-8b2e7380ddd9", "7a024963-38c5-4a43-913f-454f0f81238a"]:
+        #    logger.warning('Stop processing request id %s, inventory_id %s', request_id, Payload.host["id"])
+        #    return
         super().process(Payload)
         logger.info('Completed processing request id %s', request_id)
 
