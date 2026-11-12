@@ -10,6 +10,7 @@ requirements = [
     "logstash-formatter==0.5.17",
     "prometheus-client==0.21.1",
     "requests==2.32.4",
+    "certifi>=2026.10.19",
     "watchtower==3.3.1",
     "app-common-python==0.2.7",
     "insights-core-messaging @ git+https://github.com/RedHatInsights/insights-core-messaging@1.2.20"
