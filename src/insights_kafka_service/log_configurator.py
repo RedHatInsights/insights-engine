@@ -6,6 +6,39 @@ import watchtower
 CLOWDER_ENABLED = os.environ.get('CLOWDER_ENABLED', "false")
 
 
+class ContextualFilter(logging.Filter):
+    """Inject request_id, org_id, trace_id, and span_id into every log record."""
+
+    def filter(self, log_record):
+        try:
+            from insights_kafka_service.telemetry import threadctx
+
+            log_record.request_id = getattr(threadctx, "request_id", None)
+            log_record.org_id = getattr(threadctx, "org_id", None)
+        except Exception:
+            log_record.request_id = None
+            log_record.org_id = None
+
+        try:
+            from opentelemetry import trace as _otel_trace
+
+            span_context = _otel_trace.get_current_span().get_span_context()
+            log_record.trace_id = (
+                format(span_context.trace_id, "032x") if span_context.is_valid else None
+            )
+            log_record.span_id = (
+                format(span_context.span_id, "016x") if span_context.is_valid else None
+            )
+        except Exception:
+            log_record.trace_id = None
+            log_record.span_id = None
+
+        return True
+
+
+OTelLoggingFilter = ContextualFilter
+
+
 def clowder_config():
     import app_common_python
 
@@ -40,6 +73,16 @@ def configure_logging():
             f = non_clowder_config
 
         aws_access_key_id, aws_secret_access_key, aws_region_name, aws_log_group, create_log_group = f()
+
+        # Add contextual filter to all handlers
+        log_config.setdefault("filters", {})
+        log_config["filters"]["contextual"] = {
+            "()": "insights_kafka_service.log_configurator.ContextualFilter",
+        }
+        for handler_config in log_config.get("handlers", {}).values():
+            handler_filters = handler_config.setdefault("filters", [])
+            if "contextual" not in handler_filters:
+                handler_filters.append("contextual")
 
         if all((aws_access_key_id, aws_secret_access_key, aws_region_name)):
             import boto3

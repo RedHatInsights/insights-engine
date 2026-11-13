@@ -7,6 +7,8 @@ from confluent_kafka import Producer
 
 from insights_messaging.publishers import Publisher
 
+from .telemetry import instrument_kafka_producer
+
 logger = logging.getLogger(__name__)
 CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", 'false')
 
@@ -43,9 +45,10 @@ class InsightsKafkaProducer(Publisher):
 
         bootstrap_servers = kwargs.pop("bootstrap_servers")
         self.topic = kwargs.pop("topic")
-        self.producer = Producer(
+        producer = Producer(
             {"bootstrap.servers": ",".join(bootstrap_servers), **kwargs}
         )
+        self.producer = instrument_kafka_producer(producer)
 
     def delivery_report(self, err, msg):
         if err is not None:

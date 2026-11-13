@@ -12,6 +12,11 @@ requirements = [
     "requests==2.32.4",
     "watchtower==3.3.1",
     "app-common-python==0.2.7",
+    "opentelemetry-api==1.44.0",
+    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-exporter-otlp-proto-http==1.44.0",
+    "opentelemetry-instrumentation-confluent-kafka==0.65b0",
+    "opentelemetry-instrumentation-requests==0.65b0",
     "insights-core-messaging @ git+https://github.com/RedHatInsights/insights-core-messaging@1.2.20"
 ]
 

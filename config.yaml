@@ -50,3 +50,5 @@ service:
           bootstrap_servers:
             - "kafka:9092"
           service_name: "insights-engine"
+      - name: "insights_kafka_service.tracing.Watcher"
+      - name: "insights_kafka_service.tracing.Engine"
