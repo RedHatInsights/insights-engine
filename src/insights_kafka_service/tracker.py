@@ -11,7 +11,7 @@ from insights_messaging.publishers import Publisher
 
 logger = logging.getLogger(__name__)
 
-CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", False)
+CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", "false")
 
 
 class PayloadTracker(Publisher):
@@ -19,6 +19,7 @@ class PayloadTracker(Publisher):
         self.producer = Producer(
             {"bootstrap.servers": ",".join(bootstrap_servers), **kwargs}
         )
+        logger.info("init payload tracker for " + service_name)
         self.topic = topic
         self.service = service_name
 
@@ -39,11 +40,14 @@ class PayloadTracker(Publisher):
         }
         payload_status = json.dumps(payload_status_json)
         self.producer.produce(self.topic, payload_status.encode("utf-8"))
+        # poll here to clean up the   queue. This is inexpensive and will keep the queue clean
+        self.producer.poll(0)
 
 
 class Watcher(ConsumerWatcher):
     def __init__(self, *args, **kwargs):
-        if CLOWDER_ENABLED:
+        if CLOWDER_ENABLED.lower() == "true":
+            logger.info("CLOWDER_ENABLED is " + CLOWDER_ENABLED.lower())
             from app_common_python import LoadedConfig, KafkaTopics
 
             KAFKA_BROKER = LoadedConfig.kafka.brokers[0]

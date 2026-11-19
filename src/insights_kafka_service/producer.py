@@ -8,14 +8,14 @@ from confluent_kafka import Producer
 from insights_messaging.publishers import Publisher
 
 logger = logging.getLogger(__name__)
-CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", False)
+CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", 'false')
 
 
 class InsightsKafkaProducer(Publisher):
     def __init__(self, **kwargs):
-        if CLOWDER_ENABLED:
+        if CLOWDER_ENABLED.lower() == "true":
             from app_common_python import LoadedConfig, KafkaTopics
-
+            logger.info("Engine producer init with CLOWDER_ENABLED true")
             KAFKA_BROKER = LoadedConfig.kafka.brokers[0]
             kwargs.update(
                 {
