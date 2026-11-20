@@ -6,10 +6,30 @@ from insights import dr
 from insights_messaging.consumers.kafka import Kafka
 
 from . import PayloadMeta
+from .telemetry import extract_context_from_headers, get_tracer, threadctx, OTEL_ENABLED, OTEL_MQ_ENABLED
+
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 
 CLOWDER_ENABLED = os.environ.get("CLOWDER_ENABLED", "False")
+
+_tracer = get_tracer(__name__)
+
+
+class _ConsumerProxy:
+    """Proxy around confluent_kafka.Consumer to capture polled messages for OTel context."""
+
+    def __init__(self, consumer):
+        self._consumer = consumer
+        self.last_msg = None
+
+    def poll(self, *args, **kwargs):
+        self.last_msg = self._consumer.poll(*args, **kwargs)
+        return self.last_msg
+
+    def __getattr__(self, name):
+        return getattr(self._consumer, name)
 
 
 def get_redis(cfg):
@@ -84,6 +104,8 @@ class InsightsKafkaConsumer(Kafka):
         super().__init__(*args, **kwargs)
         self.types = ("created", "updated")
         self.redis = get_redis(kwargs["redis"]) if "redis" in kwargs else None
+        if OTEL_ENABLED and OTEL_MQ_ENABLED:
+            self.consumer = _ConsumerProxy(self.consumer)
         logger.info('InsightsKafkaConsumer services=%s, redis=%s', self.services, self.redis)
         # show logging configuration
         logger.info("The value of CLOWDER_ENABLED is " + CLOWDER_ENABLED)
@@ -141,11 +163,40 @@ class InsightsKafkaConsumer(Kafka):
             'Processing request id %s timestamp %s',
             request_id, Payload.platform_metadata.timestamp
         )
-        # if Payload.host["id"] in ["61cd34a3-8c79-4057-9b70-c42d2ddc8fc8", "757f4445-d7ef-43d2-8712-8b2e7380ddd9", "7a024963-38c5-4a43-913f-454f0f81238a"]:
-        #    logger.warning('Stop processing request id %s, inventory_id %s', request_id, Payload.host["id"])
-        #    return
-        super().process(Payload)
-        logger.info('Completed processing request id %s', request_id)
+
+        threadctx.request_id = request_id
+        threadctx.org_id = getattr(Payload.platform_metadata, 'org_id', None)
+
+        if not (OTEL_ENABLED and OTEL_MQ_ENABLED):
+            super().process(Payload)
+            logger.info('Completed processing request id %s', request_id)
+            return
+
+        msg = getattr(self.consumer, "last_msg", None)
+        headers = msg.headers() if msg else None
+        parent_ctx = extract_context_from_headers(headers)
+        topic = (msg.topic() if msg else None) or "unknown"
+
+        span_kwargs = {
+            "kind": trace.SpanKind.CONSUMER,
+            "attributes": {
+                "messaging.system": "kafka",
+                "messaging.operation.type": "process",
+                "messaging.destination.name": topic,
+            },
+        }
+        if parent_ctx is not None:
+            span_kwargs["context"] = parent_ctx
+
+        with _tracer.start_as_current_span(f"process {topic}", **span_kwargs) as span:
+            try:
+                super().process(Payload)
+                span.set_status(trace.StatusCode.OK)
+                logger.info('Completed processing request id %s', request_id)
+            except Exception as ex:
+                span.set_status(trace.StatusCode.ERROR, str(ex))
+                span.record_exception(ex)
+                raise
 
     def get_url(self, input_msg):
         return input_msg.platform_metadata.url

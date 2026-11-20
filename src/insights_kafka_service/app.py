@@ -10,6 +10,15 @@ def parse_args():
 
 
 def main():
+    import os
+    from insights_kafka_service.telemetry import init_otel, instrument_outbound_http
+
+    init_otel(
+        service_name="insights-engine",
+        service_version=os.getenv("IMAGE_TAG", "unknown"),
+    )
+    instrument_outbound_http()
+
     args = parse_args()
     with open(args.config) as f:
         AppBuilder(f.read()).build_app().run()
